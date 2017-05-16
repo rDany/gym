@@ -7,6 +7,7 @@ import logging
 import math
 import gym
 import re
+import os
 from gym import spaces
 from gym.utils import seeding
 import numpy as np
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 ## MIDI
-def open_midi(midigram_filepath):
+def open_midi(midigram_filepath, shift_pitch=0):
     ## Midigram collumns
     # 1: On (MIDI pulse units)
     # 2: Off (MIDI pulse units)
@@ -78,14 +79,14 @@ def open_midi(midigram_filepath):
     for mf in midi_frames:
         for mf_note in midi_frames[mf]:
             # Normalize pitch on the keyboard
-            #mf_normalized_pitch = mf_note['pitch']-lower_pitch
-            mf_normalized_pitch = mf_note['pitch'] # Disabling normalization
+            mf_normalized_pitch = mf_note['pitch']-shift_pitch
+            #mf_normalized_pitch = mf_note['pitch'] # Disabling normalization
             if mf_normalized_pitch >= keyboard_size:
                 print ("Skipping note, out of keyboard range")
                 continue
-            if mf_note['track'] != 1:
-                print ("Skipping note, out of track")
-                continue
+            #if mf_note['track'] != 1:
+            #    print ("Skipping note, out of track")
+            #    continue
             # Fill ontime to offtime values
             for f in range(mf_note['ontime'], mf_note['offtime']):
                 music[f][mf_normalized_pitch] = 1.0
@@ -104,7 +105,7 @@ class PianoEnv(gym.Env):
 
     def __init__(self):
         #self.env_name = name
-        self.frames = open_midi('MIDI/Hummelflug.mid')
+        self.frames = open_midi(os.path.join(os.path.dirname(__file__), 'assets/hummelflug.midigram'))
         #self.frames = None
 
         self.key_count = 88
@@ -286,7 +287,7 @@ class PianoEnv(gym.Env):
 
         if must_reset:
             done = True
-s
+
         info = {}
         return self.state, reward+default_reward, done, info
 
@@ -323,20 +324,28 @@ s
         #scale = screen_width/world_width
         #cartwidth = 50.0
         #cartheight = 30.0
-        polewidth = 10.0
-        r_fingers = []
-        self.fingertrans = []
+        fingerwidth = 6.0
+        keywidth = 5.0
 
         if self.viewer is None:
             from gym.envs.classic_control import rendering
             self.viewer = rendering.Viewer(screen_width, screen_height)
-            #l,r,t,b = -cartwidth/2, cartwidth/2, cartheight/2, -cartheight/2
-            #r_finger = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-            for _ in range(0, 5):
-                r_fingers.append(rendering.make_circle(polewidth/2))
+            r_fingers = []
+            self.fingertrans = []
+            for _ in range(0, self.fingers_count):
+                r_fingers.append(rendering.make_circle(fingerwidth/2))
                 self.fingertrans.append(rendering.Transform())
                 r_fingers[-1].add_attr(self.fingertrans[-1])
                 self.viewer.add_geom(r_fingers[-1])
+
+            r_keys = []
+            self.keytrans = []
+            for _ in range(0, self.key_count):
+                r_keys.append(rendering.make_circle(keywidth/2))
+                self.keytrans.append(rendering.Transform())
+                r_keys[-1].add_attr(self.keytrans[-1])
+                self.viewer.add_geom(r_keys[-1])
+
 
         if self.state is None: return None
 
@@ -345,9 +354,14 @@ s
         #    pass
 
         for idx, ft in enumerate(self.fingertrans):
-            #print (ft)
-            print ("printing")
             self.fingertrans[idx].set_translation((screen_width/88)*self.current_finger_position[idx], 100)
+
+        for idx, kt in enumerate(self.state[self.key_count*self.fingers_count : (self.key_count*self.fingers_count)+self.key_count]):
+            #idx = idx - self.key_count
+            self.keytrans[idx].set_translation((screen_width/88)*idx, 120+(kt*5))
+
+        #print ("printing")
+        #print (self.current_finger_position)
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
 
