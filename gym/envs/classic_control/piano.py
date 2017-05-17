@@ -103,21 +103,22 @@ class PianoEnv(gym.Env):
         'video.frames_per_second' : 50
     }
 
+
     def __init__(self):
         #self.env_name = name
-        self.frames = open_midi(os.path.join(os.path.dirname(__file__), 'assets/hummelflug.midigram'))
+        self.frames = open_midi(os.path.join(os.path.dirname(__file__), 'assets/hummelflug.midigram'), 30)
         #self.frames = None
 
         self.key_count = 88
         self.fingers_count = 10
-        self.actions_count = 7
+        actions_count = 6 # Actions except "stay still"
         self.frame_count = len(self.frames)
         #self.frame_count = 0
-        self.training = True
+        self.training = False
         self.failed_frames_threshold = 300
 
         #self.action_space = ActionSpace(self.fingers_count)
-        self.action_space = spaces.Discrete(self.fingers_count*self.actions_count)
+        self.action_space = spaces.Discrete((self.fingers_count*actions_count)+1)
         self.observation_space = spaces.Discrete((self.fingers_count*self.key_count)+self.key_count)
 
         self.viewer = None
@@ -125,19 +126,20 @@ class PianoEnv(gym.Env):
 
         self.steps_beyond_done = None
 
-
         #print ("Generating actions")
         #step_sizes = [0, 1, -1, 2, -2, 3, -3]
         #self.finger_actions = []
         #print ("Actions generated")
         #self.reset()
 
+
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
+
     def _step(self, action):
-        step_sizes = [0, 1, -1, 2, -2, 3, -3]
+        step_sizes = [1, -1, 2, -2, 3, -3]
 
         #finger_1 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] # Thumb possible positions, being 4 the center (middle finger)
         #finger_2 = [0, 1, 2, 3, 4, 5] # Index possible positions, being 0 the center (middle finger)
@@ -155,17 +157,20 @@ class PianoEnv(gym.Env):
         # 7*5*5*5*5 = 4,375*4,375 = 19,140,625
         # 5*5*5*5*5 = 3,125*3,125 = 9,765,625
 
-        step_index = int(action/self.fingers_count)
-        finger = action-(step_index*self.fingers_count)
+        if action == 60:
+            step_index = 0
+            finger = None
+        else:
+            step_index = int(action/self.fingers_count)
+            finger = action-(step_index*self.fingers_count)
 
-        default_reward = 0.01
         # Apply Middle finger movements
         #for n_finger in range(0, self.fingers_count):
         #    self.current_finger_position[2] += step_sizes[step_index]
         #for n_finger in range(0, self.fingers_count):
         #    self.current_finger_position[7] += step_sizes[step_index]
 
-        if finger != 2 and finger != 7:
+        if finger != 2 and finger != 7 and finger != None:
             #print ("Action: ", action)
             #print ("Fingers count: ", self.fingers_count)
             #print ("Finger: ", finger)
@@ -237,6 +242,30 @@ class PianoEnv(gym.Env):
                 # If right Pinky is more than 5 keys away to the right, constrain
                 self.current_finger_position[finger] = self.current_finger_position[7]+5
 
+        default_reward = 0.001
+        # If two fingers are in the same place, decrease reward
+        for f in range(0, self.fingers_count):
+            for ff in range(0, self.fingers_count):
+                if f != ff:
+                    if self.current_finger_position[f] == self.current_finger_position[ff]:
+                        default_reward -= 0.000001
+
+        # If a finger is on the right of a finger with bigger number, decrease reward
+        for f in range(0, self.fingers_count):
+            for ff in range(f, self.fingers_count):
+                if f != ff:
+                    if self.current_finger_position[f] > self.current_finger_position[ff]:
+                        default_reward -= 0.000001
+
+        # If a finger is on the left of a finger with smaller number, decrease reward
+        for f in range(0, self.fingers_count):
+            for ff in range(0, f):
+                if f != ff:
+                    if self.current_finger_position[f] < self.current_finger_position[ff]:
+                        default_reward -= 0.000001
+
+        if default_reward < 0:
+            default_reward = 0
 
         # One hot representation of keys with fingers on it
         one_hot = [0 for _ in range(0, self.key_count*self.fingers_count)]
@@ -244,12 +273,13 @@ class PianoEnv(gym.Env):
             if finger_key < 0 or finger_key > self.key_count:
                 continue # Skip if the finger is outside the keyboard
             try:
-                one_hot[finger_key+(index*(self.key_count-1))] = 1
+                one_hot_index = finger_key+(index*self.key_count)
+                one_hot[one_hot_index] = 1
             except IndexError:
                 print (finger_key)
                 print (index)
                 print (self.key_count)
-                print (finger_key+(index*(self.key_count-1)))
+                print (finger_key+(index*self.key_count))
                 raise
 
         done = False
@@ -283,7 +313,9 @@ class PianoEnv(gym.Env):
                     # If a key should be pressed and it is, reward
                     reward += 0.05
 
-        self.current_frame += 1
+        # += 1
+        self.current_frame_float += 0.1
+        self.current_frame = int(self.current_frame_float)
 
         if must_reset:
             done = True
@@ -291,11 +323,14 @@ class PianoEnv(gym.Env):
         info = {}
         return self.state, reward+default_reward, done, info
 
+
     def _reset(self):
         if self.training:
             self.current_frame = rd.randint(0, self.frame_count-1)
+            self.current_frame_float = float(self.current_frame)
         else:
             self.current_frame = 0
+            self.current_frame_float = 0.0
         current_key = int(self.key_count/2)
         for note_pitch, note_val in enumerate(self.frames[self.current_frame]):
             if note_val == 1.0 and current_key > note_pitch:
@@ -303,12 +338,12 @@ class PianoEnv(gym.Env):
         self.current_finger_position = []
         for n_finger in range(0, self.fingers_count):
             self.current_finger_position.append(current_key+n_finger)
-
         self.failed_frames = 0
 
         self.state = np.array([0 for _ in range((self.key_count * 2) + (self.key_count * self.fingers_count))])
         self.steps_beyond_done = None
         return np.array(self.state)
+
 
     def _render(self, mode='human', close=False):
         if close:
@@ -334,6 +369,12 @@ class PianoEnv(gym.Env):
             self.fingertrans = []
             for _ in range(0, self.fingers_count):
                 r_fingers.append(rendering.make_circle(fingerwidth/2))
+                if _ < 5:
+                    col = ((1.*_/5)*.5)+.5
+                    r_fingers[-1].set_color(col,0.,0.)
+                else:
+                    col = (1.-(((1.*(_-5)/5)*.5)+.5))+.5
+                    r_fingers[-1].set_color(.0,col,0.)
                 self.fingertrans.append(rendering.Transform())
                 r_fingers[-1].add_attr(self.fingertrans[-1])
                 self.viewer.add_geom(r_fingers[-1])
@@ -341,69 +382,51 @@ class PianoEnv(gym.Env):
             r_keys = []
             self.keytrans = []
             for _ in range(0, self.key_count):
-                r_keys.append(rendering.make_circle(keywidth/2))
+                keywidth = 5.0
+                keyheight = 15.0
+                l,r,t,b = -keywidth/2, keywidth/2, keyheight/2, -keyheight/2
+                r_keys.append(rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)]))
+                r_keys[-1].set_color(.9,.0,.9)
                 self.keytrans.append(rendering.Transform())
                 r_keys[-1].add_attr(self.keytrans[-1])
+                self.viewer.add_geom(r_keys[-1])
+
+            r_keys = []
+            self.keypasttrans = []
+            for _ in range(0, self.key_count):
+                keywidth = 5.0
+                keyheight = 15.0
+                l,r,t,b = -keywidth/2, keywidth/2, keyheight/2, -keyheight/2
+                r_keys.append(rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)]))
+                r_keys[-1].set_color(.9,.6,.9)
+                self.keypasttrans.append(rendering.Transform())
+                r_keys[-1].add_attr(self.keypasttrans[-1])
                 self.viewer.add_geom(r_keys[-1])
 
 
         if self.state is None: return None
 
-        #x = 0
-        #for k in self.state[88:88+88]:
-        #    pass
-
+        # Transform fingers
         for idx, ft in enumerate(self.fingertrans):
-            self.fingertrans[idx].set_translation((screen_width/88)*self.current_finger_position[idx], 100)
+            start = idx*self.key_count
+            end = start+self.key_count
+            pos = 0
+            for idxx in range(start, end):
+                if self.state[idxx] == 1.0:
+                    pos = idxx-start
+            #print (pos)
+            self.fingertrans[idx].set_translation((screen_width/88)*pos, 200)
 
-        for idx, kt in enumerate(self.state[self.key_count*self.fingers_count : (self.key_count*self.fingers_count)+self.key_count]):
-            #idx = idx - self.key_count
-            self.keytrans[idx].set_translation((screen_width/88)*idx, 120+(kt*5))
+        # Transform keys
+        start = self.key_count*self.fingers_count
+        end = start+self.key_count
+        for idx, kt in enumerate(self.state[start:end]):
+            self.keytrans[idx].set_translation((screen_width/88)*idx, 180-(kt*5))
 
-        #print ("printing")
-        #print (self.current_finger_position)
+        # Transform future keys
+        start = (self.key_count*self.fingers_count)+self.key_count
+        end = start+self.key_count
+        for idx, kt in enumerate(self.state[start:end]):
+            self.keypasttrans[idx].set_translation((screen_width/88)*idx, 140-(kt*5))
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
-
-        if 0:
-            world_width = self.x_threshold*2
-            scale = screen_width/world_width
-            carty = 100 # TOP OF CART
-            polewidth = 10.0
-            polelen = scale * 1.0
-            cartwidth = 50.0
-            cartheight = 30.0
-
-            if self.viewer is None:
-                from gym.envs.classic_control import rendering
-                self.viewer = rendering.Viewer(screen_width, screen_height)
-                l,r,t,b = -cartwidth/2, cartwidth/2, cartheight/2, -cartheight/2
-                axleoffset =cartheight/4.0
-                cart = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-                self.carttrans = rendering.Transform()
-                cart.add_attr(self.carttrans)
-                self.viewer.add_geom(cart)
-                l,r,t,b = -polewidth/2,polewidth/2,polelen-polewidth/2,-polewidth/2
-                pole = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-                pole.set_color(.8,.6,.4)
-                self.poletrans = rendering.Transform(translation=(0, axleoffset))
-                pole.add_attr(self.poletrans)
-                pole.add_attr(self.carttrans)
-                self.viewer.add_geom(pole)
-                self.axle = rendering.make_circle(polewidth/2)
-                self.axle.add_attr(self.poletrans)
-                self.axle.add_attr(self.carttrans)
-                self.axle.set_color(.5,.5,.8)
-                self.viewer.add_geom(self.axle)
-                self.track = rendering.Line((0,carty), (screen_width,carty))
-                self.track.set_color(0,0,0)
-                self.viewer.add_geom(self.track)
-
-            if self.state is None: return None
-
-            x = self.state
-            cartx = x[0]*scale+screen_width/2.0 # MIDDLE OF CART
-            self.carttrans.set_translation(cartx, carty)
-            self.poletrans.set_rotation(-x[2])
-
-            return self.viewer.render(return_rgb_array = mode=='rgb_array')
