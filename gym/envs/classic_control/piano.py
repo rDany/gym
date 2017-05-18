@@ -108,13 +108,14 @@ class PianoEnv(gym.Env):
         #self.env_name = name
         self.frames = open_midi(os.path.join(os.path.dirname(__file__), 'assets/hummelflug.midigram'), 30)
         #self.frames = None
+        #print (len(self.frames))
 
         self.key_count = 88
         self.fingers_count = 10
         actions_count = 6 # Actions except "stay still"
         self.frame_count = len(self.frames)
         #self.frame_count = 0
-        self.training = False
+        self.training = True
         self.failed_frames_threshold = 300
 
         #self.action_space = ActionSpace(self.fingers_count)
@@ -188,23 +189,23 @@ class PianoEnv(gym.Env):
             if self.current_finger_position[finger] < self.current_finger_position[2]-5:
                 # If left Pinky is more than 5 keys away to the left, constrain
                 self.current_finger_position[finger] = self.current_finger_position[2]-5
-            elif self.current_finger_position[finger] > self.current_finger_position[2]:
+            elif self.current_finger_position[finger] > self.current_finger_position[2]-2:
                 # If left Pinky is more than 0 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]
+                self.current_finger_position[finger] = self.current_finger_position[2]-2
         elif finger == 1:
             if self.current_finger_position[finger] < self.current_finger_position[2]-3:
                 # If left Ring is more than 3 keys away to the left, constrain
                 self.current_finger_position[finger] = self.current_finger_position[2]-3
-            elif self.current_finger_position[finger] > self.current_finger_position[2]:
+            elif self.current_finger_position[finger] > self.current_finger_position[2]-1:
                 # If left Ring is more than 0 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]
+                self.current_finger_position[finger] = self.current_finger_position[2]-1
         elif finger == 3: # We skip finger 2, since it is the Left Middle finger
             if self.current_finger_position[finger] > self.current_finger_position[2]+5:
                 # If left Index is more than 5 keys away to the right, constrain
                 self.current_finger_position[finger] = self.current_finger_position[2]+5
-            elif self.current_finger_position[finger] < self.current_finger_position[2]:
+            elif self.current_finger_position[finger] < self.current_finger_position[2]+1:
                 # If left Index is more than 0 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]
+                self.current_finger_position[finger] = self.current_finger_position[2]+1
         elif finger == 4:
             if self.current_finger_position[finger] > self.current_finger_position[2]+9:
                 # If left Thumb is more than 9 keys away to the right, constrain
@@ -224,20 +225,20 @@ class PianoEnv(gym.Env):
             if self.current_finger_position[finger] < self.current_finger_position[7]-5:
                 # If right Index is more than 5 keys away to the left, constrain
                 self.current_finger_position[finger] = self.current_finger_position[7]-5
-            elif self.current_finger_position[finger] > self.current_finger_position[7]:
+            elif self.current_finger_position[finger] > self.current_finger_position[7]-1:
                 # If right Index is more than 0 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]
+                self.current_finger_position[finger] = self.current_finger_position[7]-1
         elif finger == 8: # We skip finger 7, since it is the Right Middle finger
-            if self.current_finger_position[finger] < self.current_finger_position[7]:
+            if self.current_finger_position[finger] < self.current_finger_position[7]+1:
                 # If right Ring is more than 0 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]
+                self.current_finger_position[finger] = self.current_finger_position[7]+1
             elif self.current_finger_position[finger] > self.current_finger_position[7]+3:
                 # If right Ring is more than 3 keys away to the right, constrain
                 self.current_finger_position[finger] = self.current_finger_position[7]+3
         elif finger == 9:
-            if self.current_finger_position[finger] < self.current_finger_position[7]:
+            if self.current_finger_position[finger] < self.current_finger_position[7]+2:
                 # If right Pinky is more than 0 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]
+                self.current_finger_position[finger] = self.current_finger_position[7]+2
             elif self.current_finger_position[finger] > self.current_finger_position[7]+5:
                 # If right Pinky is more than 5 keys away to the right, constrain
                 self.current_finger_position[finger] = self.current_finger_position[7]+5
@@ -270,7 +271,7 @@ class PianoEnv(gym.Env):
         # One hot representation of keys with fingers on it
         one_hot = [0 for _ in range(0, self.key_count*self.fingers_count)]
         for index, finger_key in enumerate(self.current_finger_position):
-            if finger_key < 0 or finger_key > self.key_count:
+            if finger_key < 0 or finger_key >= self.key_count:
                 continue # Skip if the finger is outside the keyboard
             try:
                 one_hot_index = finger_key+(index*self.key_count)
@@ -314,7 +315,7 @@ class PianoEnv(gym.Env):
                     reward += 0.05
 
         # += 1
-        self.current_frame_float += 0.1
+        self.current_frame_float += 0.05
         self.current_frame = int(self.current_frame_float)
 
         if must_reset:

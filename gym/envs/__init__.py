@@ -53,7 +53,7 @@ register(
 register(
     id='Piano-v0',
     entry_point='gym.envs.classic_control:PianoEnv',
-    max_episode_steps=200,
+    max_episode_steps=2000,
     reward_threshold=195.0,
 )
 
