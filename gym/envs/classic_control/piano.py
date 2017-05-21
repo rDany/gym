@@ -115,7 +115,7 @@ class PianoEnv(gym.Env):
         actions_count = 6 # Actions except "stay still"
         self.frame_count = len(self.frames)
         #self.frame_count = 0
-        self.training = True
+        self.training = False
         self.failed_frames_threshold = 300
 
         #self.action_space = ActionSpace(self.fingers_count)
@@ -266,7 +266,7 @@ class PianoEnv(gym.Env):
                         default_reward -= 0.000001
 
         if default_reward < 0:
-            default_reward = 0
+            default_reward = 0.000001
 
         # One hot representation of keys with fingers on it
         one_hot = [0 for _ in range(0, self.key_count*self.fingers_count)]
@@ -297,32 +297,42 @@ class PianoEnv(gym.Env):
         if not must_reset:
             # If a finger falls outside the keyboard, done
             for finger_number in range(0, self.fingers_count):
-                if self.current_finger_position[finger_number] < 0 or self.current_finger_position[finger_number] > self.key_count:
-                    reward = 0.0001
+                if self.current_finger_position[finger_number] < 0:
                     must_reset = True
+                    self.current_finger_position[finger_number] = 0
+                elif self.current_finger_position[finger_number] >= self.key_count:
+                    must_reset = True
+                    self.current_finger_position[finger_number] = self.key_count - 1
 
         if not must_reset:
+            failed = False
+            achieved = False
             for key, key_val in enumerate(self.frames[self.current_frame]):
                 if key_val == 1.0 and key not in self.current_finger_position:
                     # If a key should be pressed but is not, increase failed_frames counter
-                    reward += 0.0001
+                    failed = True
                     self.failed_frames += 1
                     if self.failed_frames > self.failed_frames_threshold:
                         # If failed_frames counter > threshold, done
                         must_reset = True
                 elif key_val == 1.0 and key in self.current_finger_position:
                     # If a key should be pressed and it is, reward
-                    reward += 0.05
+                    #reward += 0.05
+                    achieved = True
+            if achieved:
+                reward = 1.0
+            if failed:
+                reward = -1.0
 
         # += 1
-        self.current_frame_float += 0.05
+        self.current_frame_float += 1.0#0.05
         self.current_frame = int(self.current_frame_float)
 
         if must_reset:
             done = True
 
         info = {}
-        return self.state, reward+default_reward, done, info
+        return self.state, reward, done, info
 
 
     def _reset(self):
