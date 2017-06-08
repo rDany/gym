@@ -115,8 +115,8 @@ class PianoEnv(gym.Env):
         actions_count = 6 # Actions except "stay still"
         self.frame_count = len(self.frames)
         #self.frame_count = 0
-        self.training = False
-        self.failed_frames_threshold = 300
+        self.randomize_start = False
+        self.failed_frames_threshold = 30000
 
         #self.action_space = ActionSpace(self.fingers_count)
         self.action_space = spaces.Discrete((self.fingers_count*actions_count)+1)
@@ -126,6 +126,8 @@ class PianoEnv(gym.Env):
         self.state = None
 
         self.steps_beyond_done = None
+
+        self.action_history = []
 
         #print ("Generating actions")
         #step_sizes = [0, 1, -1, 2, -2, 3, -3]
@@ -158,12 +160,17 @@ class PianoEnv(gym.Env):
         # 7*5*5*5*5 = 4,375*4,375 = 19,140,625
         # 5*5*5*5*5 = 3,125*3,125 = 9,765,625
 
+        self.action_history.append(action)
+
         if action == 60:
             step_index = 0
             finger = None
         else:
             step_index = int(action/self.fingers_count)
             finger = action-(step_index*self.fingers_count)
+
+        # Before applying actions, save current position
+        previous_fingers_position = list(self.current_finger_position)
 
         # Apply Middle finger movements
         #for n_finger in range(0, self.fingers_count):
@@ -184,96 +191,122 @@ class PianoEnv(gym.Env):
         elif finger == 7: # Fingers 5, 6, 8, 9 constrained to 7
             for fn in range(5, 10):
                 self.current_finger_position[fn] += step_sizes[step_index]
+
+        pinky_min = 6  # Left
+        pinky_max = 2  # Right
+        ring_min = 4   # Left
+        ring_max = 1   # Right
+        index_min = 6  # Right
+        index_max = 1  # Left
+        thumb_min = 10 # Right
+        thumb_max = -2 #4  # Left
+
         if finger == 0:
             # Apply constrains Left hand fingers (constrained to left Middle)
-            if self.current_finger_position[finger] < self.current_finger_position[2]-5:
+            if self.current_finger_position[finger] < self.current_finger_position[2]-pinky_min:
                 # If left Pinky is more than 5 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]-5
-            elif self.current_finger_position[finger] > self.current_finger_position[2]-2:
+                self.current_finger_position[finger] = self.current_finger_position[2]-pinky_min
+            elif self.current_finger_position[finger] > self.current_finger_position[2]-pinky_max:
                 # If left Pinky is more than 0 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]-2
+                self.current_finger_position[finger] = self.current_finger_position[2]-pinky_max
         elif finger == 1:
-            if self.current_finger_position[finger] < self.current_finger_position[2]-3:
+            if self.current_finger_position[finger] < self.current_finger_position[2]-ring_min:
                 # If left Ring is more than 3 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]-3
-            elif self.current_finger_position[finger] > self.current_finger_position[2]-1:
+                self.current_finger_position[finger] = self.current_finger_position[2]-ring_min
+            elif self.current_finger_position[finger] > self.current_finger_position[2]-ring_max:
                 # If left Ring is more than 0 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]-1
+                self.current_finger_position[finger] = self.current_finger_position[2]-ring_max
         elif finger == 3: # We skip finger 2, since it is the Left Middle finger
-            if self.current_finger_position[finger] > self.current_finger_position[2]+5:
+            if self.current_finger_position[finger] > self.current_finger_position[2]+index_min:
                 # If left Index is more than 5 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]+5
-            elif self.current_finger_position[finger] < self.current_finger_position[2]+1:
+                self.current_finger_position[finger] = self.current_finger_position[2]+index_min
+            elif self.current_finger_position[finger] < self.current_finger_position[2]+index_max:
                 # If left Index is more than 0 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]+1
+                self.current_finger_position[finger] = self.current_finger_position[2]+index_max
         elif finger == 4:
-            if self.current_finger_position[finger] > self.current_finger_position[2]+9:
-                # If left Thumb is more than 9 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]+9
-            elif self.current_finger_position[finger] < self.current_finger_position[2]-4:
-                # If left Thumb is more than 4 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[2]-4
+            if self.current_finger_position[finger] > self.current_finger_position[2]+thumb_min:
+                # If left Thumb is more than X keys away to the right, constrain
+                self.current_finger_position[finger] = self.current_finger_position[2]+thumb_min
+            elif self.current_finger_position[finger] < self.current_finger_position[2]-thumb_max:
+                # If left Thumb is more than X keys away to the left, constrain
+                self.current_finger_position[finger] = self.current_finger_position[2]-thumb_max
         if finger == 5:
             # Apply constrains Right hand fingers (constrained to right Middle)
-            if self.current_finger_position[finger] < self.current_finger_position[7]-9:
+            if self.current_finger_position[finger] < self.current_finger_position[7]-thumb_min:
                 # If right Thumb is more than 9 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]-9
-            elif self.current_finger_position[finger] > self.current_finger_position[7]+4:
+                self.current_finger_position[finger] = self.current_finger_position[7]-thumb_min
+            elif self.current_finger_position[finger] > self.current_finger_position[7]+thumb_max:
                 # If right Thumb is more than 4 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]+4
+                self.current_finger_position[finger] = self.current_finger_position[7]+thumb_max
         elif finger == 6:
-            if self.current_finger_position[finger] < self.current_finger_position[7]-5:
+            if self.current_finger_position[finger] < self.current_finger_position[7]-index_min:
                 # If right Index is more than 5 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]-5
-            elif self.current_finger_position[finger] > self.current_finger_position[7]-1:
+                self.current_finger_position[finger] = self.current_finger_position[7]-index_min
+            elif self.current_finger_position[finger] > self.current_finger_position[7]-index_max:
                 # If right Index is more than 0 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]-1
+                self.current_finger_position[finger] = self.current_finger_position[7]-index_max
         elif finger == 8: # We skip finger 7, since it is the Right Middle finger
-            if self.current_finger_position[finger] < self.current_finger_position[7]+1:
+            if self.current_finger_position[finger] < self.current_finger_position[7]+ring_max:
                 # If right Ring is more than 0 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]+1
-            elif self.current_finger_position[finger] > self.current_finger_position[7]+3:
+                self.current_finger_position[finger] = self.current_finger_position[7]+ring_max
+            elif self.current_finger_position[finger] > self.current_finger_position[7]+ring_min:
                 # If right Ring is more than 3 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]+3
+                self.current_finger_position[finger] = self.current_finger_position[7]+ring_min
         elif finger == 9:
-            if self.current_finger_position[finger] < self.current_finger_position[7]+2:
+            if self.current_finger_position[finger] < self.current_finger_position[7]+pinky_max:
                 # If right Pinky is more than 0 keys away to the left, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]+2
-            elif self.current_finger_position[finger] > self.current_finger_position[7]+5:
+                self.current_finger_position[finger] = self.current_finger_position[7]+pinky_max
+            elif self.current_finger_position[finger] > self.current_finger_position[7]+pinky_min:
                 # If right Pinky is more than 5 keys away to the right, constrain
-                self.current_finger_position[finger] = self.current_finger_position[7]+5
+                self.current_finger_position[finger] = self.current_finger_position[7]+pinky_min
 
-        default_reward = 0.001
-        # If two fingers are in the same place, decrease reward
-        for f in range(0, self.fingers_count):
-            for ff in range(0, self.fingers_count):
-                if f != ff:
-                    if self.current_finger_position[f] == self.current_finger_position[ff]:
-                        default_reward -= 0.000001
+        # If a finger falls outside the keyboard, reset positions
+        for finger_number in range(0, self.fingers_count):
+            if self.current_finger_position[finger_number] < 0:
+                self.current_finger_position = list(previous_fingers_position)
+                break
+            elif self.current_finger_position[finger_number] >= self.key_count:
+                self.current_finger_position = list(previous_fingers_position)
+                #print ("Finger position > Key Count")
+                #print (previous_fingers_position)
+                break
 
-        # If a finger is on the right of a finger with bigger number, decrease reward
-        for f in range(0, self.fingers_count):
-            for ff in range(f, self.fingers_count):
-                if f != ff:
-                    if self.current_finger_position[f] > self.current_finger_position[ff]:
-                        default_reward -= 0.000001
+        if 0:
+            default_reward = 0.001
+            # If two fingers are in the same place, decrease reward
+            for f in range(0, self.fingers_count):
+                for ff in range(0, self.fingers_count):
+                    if f != ff:
+                        if self.current_finger_position[f] == self.current_finger_position[ff]:
+                            default_reward -= 0.000001
 
-        # If a finger is on the left of a finger with smaller number, decrease reward
-        for f in range(0, self.fingers_count):
-            for ff in range(0, f):
-                if f != ff:
-                    if self.current_finger_position[f] < self.current_finger_position[ff]:
-                        default_reward -= 0.000001
+            # If a finger is on the right of a finger with bigger number, decrease reward
+            for f in range(0, self.fingers_count):
+                for ff in range(f, self.fingers_count):
+                    if f != ff:
+                        if self.current_finger_position[f] > self.current_finger_position[ff]:
+                            default_reward -= 0.000001
 
-        if default_reward < 0:
-            default_reward = 0.000001
+            # If a finger is on the left of a finger with smaller number, decrease reward
+            for f in range(0, self.fingers_count):
+                for ff in range(0, f):
+                    if f != ff:
+                        if self.current_finger_position[f] < self.current_finger_position[ff]:
+                            default_reward -= 0.000001
+
+            if default_reward < 0:
+                default_reward = 0.000001
 
         # One hot representation of keys with fingers on it
         one_hot = [0 for _ in range(0, self.key_count*self.fingers_count)]
         for index, finger_key in enumerate(self.current_finger_position):
-            if finger_key < 0 or finger_key >= self.key_count:
-                continue # Skip if the finger is outside the keyboard
+            #if finger_key < 0 or finger_key >= self.key_count:
+            #    continue # Skip if the finger is outside the keyboard
             try:
+                # 88 + (9*88)
+                # finger_key = 88
+                # index = 9
+                # self.key_count = 88
                 one_hot_index = finger_key+(index*self.key_count)
                 one_hot[one_hot_index] = 1
             except IndexError:
@@ -294,19 +327,20 @@ class PianoEnv(gym.Env):
         else:
             self.state = np.array(one_hot + self.frames[self.current_frame] + self.frames[self.current_frame + 1])
 
-        if not must_reset:
-            # If a finger falls outside the keyboard, done
-            for finger_number in range(0, self.fingers_count):
-                if self.current_finger_position[finger_number] < 0:
+        if False:
+            if not must_reset:
+                # If "no movement" action was the last 100 actions, done
+                frozen = True
+                for act in action_history[:-100]:
+                    if act!=61:
+                        frozen = False
+                if frozen:
                     must_reset = True
-                    self.current_finger_position[finger_number] = 0
-                elif self.current_finger_position[finger_number] >= self.key_count:
-                    must_reset = True
-                    self.current_finger_position[finger_number] = self.key_count - 1
+                    reward = -1.0
 
+        failed = False
+        achieved = False
         if not must_reset:
-            failed = False
-            achieved = False
             for key, key_val in enumerate(self.frames[self.current_frame]):
                 if key_val == 1.0 and key not in self.current_finger_position:
                     # If a key should be pressed but is not, increase failed_frames counter
@@ -324,9 +358,10 @@ class PianoEnv(gym.Env):
             if failed:
                 reward = -1.0
 
-        # += 1
-        self.current_frame_float += 1.0#0.05
-        self.current_frame = int(self.current_frame_float)
+        if not failed:
+            # += 1
+            self.current_frame_float += 1.0
+            self.current_frame = int(self.current_frame_float)
 
         if must_reset:
             done = True
@@ -336,22 +371,27 @@ class PianoEnv(gym.Env):
 
 
     def _reset(self):
-        if self.training:
-            self.current_frame = rd.randint(0, self.frame_count-1)
+        # Current Frame
+        if self.randomize_start:
+            self.current_frame = rd.randint(0, self.frame_count-1-1)
             self.current_frame_float = float(self.current_frame)
         else:
             self.current_frame = 0
             self.current_frame_float = 0.0
-        current_key = int(self.key_count/2)
-        for note_pitch, note_val in enumerate(self.frames[self.current_frame]):
-            if note_val == 1.0 and current_key > note_pitch:
-                current_key = note_pitch
+        # Current finger position
+        current_key = int((self.key_count*0.5)-(self.fingers_count*0.5))
+        #for note_pitch, note_val in enumerate(self.frames[self.current_frame]):
+        #    if note_val == 1.0 and current_key > note_pitch:
+        #        current_key = note_pitch
         self.current_finger_position = []
         for n_finger in range(0, self.fingers_count):
             self.current_finger_position.append(current_key+n_finger)
+        # Misc
+        self.action_history = []
         self.failed_frames = 0
-
         self.state = np.array([0 for _ in range((self.key_count * 2) + (self.key_count * self.fingers_count))])
+        self.state = self.state.reshape((1, 12, 88, 1), order='F')
+        self.state = self.state.transpose(axes=[0, 2, 1, 3])
         self.steps_beyond_done = None
         return np.array(self.state)
 
@@ -426,18 +466,18 @@ class PianoEnv(gym.Env):
                 if self.state[idxx] == 1.0:
                     pos = idxx-start
             #print (pos)
-            self.fingertrans[idx].set_translation((screen_width/88)*pos, 200)
+            self.fingertrans[idx].set_translation(((screen_width/90)*pos)+10, 200)
 
         # Transform keys
         start = self.key_count*self.fingers_count
         end = start+self.key_count
         for idx, kt in enumerate(self.state[start:end]):
-            self.keytrans[idx].set_translation((screen_width/88)*idx, 180-(kt*5))
+            self.keytrans[idx].set_translation(((screen_width/90)*idx)+10, 180-(kt*5))
 
         # Transform future keys
         start = (self.key_count*self.fingers_count)+self.key_count
         end = start+self.key_count
         for idx, kt in enumerate(self.state[start:end]):
-            self.keypasttrans[idx].set_translation((screen_width/88)*idx, 140-(kt*5))
+            self.keypasttrans[idx].set_translation(((screen_width/90)*idx)+10, 140-(kt*5))
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
